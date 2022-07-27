@@ -1,37 +1,5 @@
 package org.infernus.idea.checkstyle.toolwindow;
 
-import com.intellij.openapi.actionSystem.ActionGroup;
-import com.intellij.openapi.actionSystem.ActionManager;
-import com.intellij.openapi.actionSystem.ActionToolbar;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.LogicalPosition;
-import com.intellij.openapi.editor.ScrollType;
-import com.intellij.openapi.fileEditor.FileEditor;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.TextEditor;
-import com.intellij.openapi.project.DumbAware;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.ComboBox;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
-import com.intellij.psi.PsiFile;
-import com.intellij.ui.components.JBScrollPane;
-import com.intellij.ui.content.Content;
-import com.intellij.ui.treeStructure.Tree;
-import com.intellij.util.ui.JBUI;
-import org.infernus.idea.checkstyle.checker.Problem;
-import org.infernus.idea.checkstyle.config.ConfigurationListener;
-import org.infernus.idea.checkstyle.config.PluginConfigurationManager;
-import org.infernus.idea.checkstyle.csapi.SeverityLevel;
-import org.infernus.idea.checkstyle.exception.CheckStylePluginParseException;
-import org.infernus.idea.checkstyle.exception.CheckstyleToolException;
-import org.infernus.idea.checkstyle.model.ConfigurationLocation;
-import org.jetbrains.annotations.Nullable;
-
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
@@ -47,7 +15,47 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.infernus.idea.checkstyle.CheckStyleBundle.message;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionToolbar;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.LogicalPosition;
+import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.fileEditor.FileEditor;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.TextEditor;
+import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.ui.popup.PopupStep;
+import com.intellij.openapi.ui.popup.util.BaseListPopupStep;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.psi.PsiFile;
+import com.intellij.ui.awt.RelativePoint;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.content.Content;
+import com.intellij.ui.treeStructure.Tree;
+import com.intellij.util.ui.JBUI;
+import org.infernus.idea.checkstyle.CheckStyleBundle;
+import org.infernus.idea.checkstyle.checker.Problem;
+import org.infernus.idea.checkstyle.config.ConfigurationListener;
+import org.infernus.idea.checkstyle.config.PluginConfigurationManager;
+import org.infernus.idea.checkstyle.csapi.SeverityLevel;
+import org.infernus.idea.checkstyle.exception.CheckStylePluginParseException;
+import org.infernus.idea.checkstyle.exception.CheckstyleToolException;
+import org.infernus.idea.checkstyle.model.ConfigurationLocation;
+import org.infernus.idea.checkstyle.toolwindow.nodes.ResultTreeBranchNode;
+import org.infernus.idea.checkstyle.toolwindow.nodes.ResultTreeProblemNode;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
 import static org.infernus.idea.checkstyle.util.Strings.isBlank;
 
 /**
@@ -57,6 +65,8 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
 
     public static final String ID_TOOLWINDOW = "CheckStyle";
 
+    private static final long serialVersionUID = -3532676452869295556L;
+
     /**
      * Logger for this class.
      */
@@ -64,7 +74,7 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
 
     private static final String MAIN_ACTION_GROUP = "CheckStylePluginActions";
     private static final String TREE_ACTION_GROUP = "CheckStylePluginTreeActions";
-    private static final String DEFAULT_OVERRIDE = message("plugin.toolwindow.default-file");
+    private static final String DEFAULT_OVERRIDE = CheckStyleBundle.message("plugin.toolwindow.default-file");
 
     private static final Map<Pattern, String> CHECKSTYLE_ERROR_PATTERNS
             = new HashMap<>();
@@ -73,11 +83,12 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
     private final ToolWindow toolWindow;
     private final ComboBox configurationOverrideCombo = new ComboBox();
     private final DefaultComboBoxModel configurationOverrideModel = new DefaultComboBoxModel();
-
     private boolean displayingErrors = true;
     private boolean displayingWarnings = true;
     private boolean displayingInfo = true;
-
+    private ResultTreeModel.GroupedBy groupedBy = ResultTreeModel.GroupedBy.File;
+    private boolean flattenModules;
+    private boolean flattenPackages;
     private JTree resultsTree;
     private JToolBar progressPanel;
     private JProgressBar progressBar;
@@ -98,6 +109,8 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
             LOG.warn("Pattern mappings could not be instantiated.", t);
         }
     }
+
+    private Map<PsiFile, List<Problem>> currentResults;
 
     /**
      * Create a tool window for the given project.
@@ -138,6 +151,31 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
         mainToolbar.getComponent().setVisible(true);
     }
 
+    /**
+     * Expand the given tree to the given level, starting from the given node
+     * and path.
+     *
+     * @param tree  The tree to be expanded
+     * @param node  The node to start from
+     * @param path  The path to start from
+     * @param level The number of levels to expand to
+     */
+    private static void expandNode(@NotNull final JTree tree,
+                                   @NotNull final TreeNode node,
+                                   @NotNull final TreePath path,
+                                   final int level) {
+        if (level <= 0) {
+            return;
+        }
+
+        tree.expandPath(path);
+
+        for (int i = 0; i < node.getChildCount(); ++i) {
+            final TreeNode childNode = node.getChildAt(i);
+            expandNode(tree, childNode, path.pathByAddingChild(childNode), level - 1);
+        }
+    }
+
     public ConfigurationLocation getSelectedOverride() {
         final Object selectedItem = configurationOverrideModel.getSelectedItem();
         if (DEFAULT_OVERRIDE.equals(selectedItem)) {
@@ -174,7 +212,7 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
 
         progressPanel = new JToolBar(JToolBar.HORIZONTAL);
         progressPanel.add(Box.createHorizontalStrut(4));
-        progressPanel.add(new JLabel(message("plugin.toolwindow.override")));
+        progressPanel.add(new JLabel(CheckStyleBundle.message("plugin.toolwindow.override")));
         progressPanel.add(Box.createHorizontalStrut(4));
         progressPanel.add(configurationOverrideCombo);
         progressPanel.add(Box.createHorizontalStrut(4));
@@ -297,28 +335,34 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
      */
     private void scrollToError(final TreePath treePath) {
         final DefaultMutableTreeNode treeNode = (DefaultMutableTreeNode) treePath.getLastPathComponent();
-        if (treeNode == null || !(treeNode.getUserObject() instanceof ResultTreeNode)) {
+        if (treeNode == null) {
             return;
         }
 
-        final ResultTreeNode nodeInfo = (ResultTreeNode) treeNode.getUserObject();
-        if (nodeInfo.getFile() == null || nodeInfo.getProblem() == null) {
-            return; // no problem here :-)
+        final Object userObject = treeNode.getUserObject();
+        if (!(userObject instanceof ResultTreeProblemNode)) {
+            return;
         }
 
-        final VirtualFile virtualFile = nodeInfo.getFile().getVirtualFile();
+        final Problem problem = ((ResultTreeProblemNode) userObject).getProblem();
+
+        final PsiFile file = problem.getContainingFile();
+        if (file == null) {
+            return;
+        }
+
+        final VirtualFile virtualFile = file.getVirtualFile();
         if (virtualFile == null || !virtualFile.exists()) {
             return;
         }
 
         final FileEditorManager fileEditorManager = FileEditorManager.getInstance(project);
         ApplicationManager.getApplication().invokeLater(() -> {
-            final FileEditor[] editor = fileEditorManager.openFile(
-                    virtualFile, true);
+            final FileEditor[] editor = fileEditorManager.openFile(virtualFile, true);
 
             if (editor.length > 0 && editor[0] instanceof TextEditor) {
                 final LogicalPosition problemPos = new LogicalPosition(
-                        Math.max(lineFor(nodeInfo) - 1, 0), Math.max(columnFor(nodeInfo), 0));
+                        Math.max(problem.line() - 1, 0), Math.max(problem.column(), 0));
 
                 final Editor textEditor = ((TextEditor) editor[0]).getEditor();
                 textEditor.getCaretModel().moveToLogicalPosition(problemPos);
@@ -327,12 +371,13 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
         }, ModalityState.NON_MODAL);
     }
 
-    private int lineFor(final ResultTreeNode nodeInfo) {
-        return nodeInfo.getProblem().line();
-    }
-
-    private int columnFor(final ResultTreeNode nodeInfo) {
-        return nodeInfo.getProblem().column();
+    /**
+     * Should we scroll to the selected error in the editor automatically?
+     *
+     * @return true if the error should be scrolled to automatically.
+     */
+    public boolean isScrollToSource() {
+        return scrollToSource;
     }
 
     /**
@@ -345,34 +390,268 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
     }
 
     /**
-     * Should we scroll to the selected error in the editor automatically?
-     *
-     * @return true if the error should be scrolled to automatically.
+     * Collapse the tree so that only the root node is visible.
      */
-    public boolean isScrollToSource() {
-        return scrollToSource;
+    public void collapseTree() {
+        for (int i = 1; i < resultsTree.getRowCount(); ++i) {
+            resultsTree.collapseRow(i);
+        }
     }
 
+    /**
+     * Expand the error tree to the fullest.
+     */
+    public void expandTree() {
+        expandTree(treeModel.getVisibleRoot(), treeModel.getMaxNodeDepth());
+    }
 
     /**
-     * Listen for clicks and scroll to the error's source as necessary.
+     * Expand the error tree to the given level.
+     *
+     * @param node  the node to expand
+     * @param level The level to expand to
+     */
+    private void expandTree(@NotNull final TreeNode node, final int level) {
+        expandNode(resultsTree, node, new TreePath(treeModel.getPathToRoot(node)), level);
+    }
+
+    /**
+     * Clear the results and display a 'scan in progress' notice.
+     *
+     * @param size the number of files being scanned.
+     */
+    public void displayInProgress(final int size) {
+        setProgressBarMax(size);
+
+        treeModel.clear();
+        treeModel.setRootMessage("plugin.results.in-progress", AllIcons.General.Information);
+    }
+
+    public void displayWarningResult(@NotNull final String messageKey,
+                                     @Nullable final Object... messageArgs) {
+        clearProgress();
+
+        treeModel.clear();
+        treeModel.setRootMessage(messageKey, AllIcons.General.Warning, messageArgs);
+    }
+
+    /**
+     * Clear the results and display notice to say an error occurred.
+     *
+     * @param error the error that occurred.
+     */
+    public void displayErrorResult(final Throwable error) {
+        // match some friendly error messages.
+        String errorText = null;
+        if (error instanceof CheckstyleToolException && error.getCause() != null) {
+            for (final Map.Entry<Pattern, String> errorPatternEntry
+                    : CHECKSTYLE_ERROR_PATTERNS.entrySet()) {
+                final Matcher errorMatcher
+                        = errorPatternEntry.getKey().matcher(error.getCause().getMessage());
+                if (errorMatcher.find()) {
+                    final Object[] args = new Object[errorMatcher.groupCount()];
+
+                    for (int i = 0; i < errorMatcher.groupCount(); ++i) {
+                        args[i] = errorMatcher.group(i + 1);
+                    }
+
+                    errorText = CheckStyleBundle.message(errorPatternEntry.getValue(), args);
+                }
+            }
+        }
+
+        if (errorText == null) {
+            if (error instanceof CheckStylePluginParseException) {
+                errorText = CheckStyleBundle.message("plugin.results.unparseable");
+            } else {
+                errorText = CheckStyleBundle.message("plugin.results.error");
+            }
+        }
+
+        treeModel.clear();
+        treeModel.setRootText(errorText, AllIcons.General.Error);
+
+        clearProgress();
+    }
+
+    @NotNull
+    private List<SeverityLevel> getDisplayedSeverities() {
+        final List<SeverityLevel> severityLevels = new ArrayList<>();
+
+        if (displayingErrors) {
+            severityLevels.add(SeverityLevel.Error);
+        }
+
+        if (displayingWarnings) {
+            severityLevels.add(SeverityLevel.Warning);
+        }
+
+        if (displayingInfo) {
+            severityLevels.add(SeverityLevel.Info);
+        }
+
+        return severityLevels;
+    }
+
+    /**
+     * Refresh the displayed results based on the current filter settings.
+     */
+    public void filterDisplayedResults() {
+        // TODO be a little nicer here, maintain display state
+
+        treeModel.filter(getDisplayedSeverities());
+    }
+
+    /**
+     * Display the passed results.
+     *
+     * @param results the map of checked files to problem descriptors.
+     */
+    public void displayResults(final Map<PsiFile, List<Problem>> results) {
+        currentResults = results;
+        updateTree();
+    }
+
+    private void updateTree() {
+        treeModel.setModel(currentResults, groupedBy, flattenModules, flattenPackages, getDisplayedSeverities());
+
+        invalidate();
+        repaint();
+
+        expandTree();
+        clearProgress();
+    }
+
+    public boolean isGroupedBy(final ResultTreeModel.GroupedBy groupedBy) {
+        return this.groupedBy == groupedBy;
+    }
+
+    public void setGroupedBy(@NotNull final ResultTreeModel.GroupedBy groupedBy) {
+        this.groupedBy = groupedBy;
+        if (currentResults != null) {
+            updateTree();
+        }
+    }
+
+    public boolean isFlattenModules() {
+        return flattenModules;
+    }
+
+    public void setFlattenModules(final boolean flattenModules) {
+        this.flattenModules = flattenModules;
+        if (currentResults != null) {
+            updateTree();
+        }
+    }
+
+    public boolean isFlattenPackages() {
+        return flattenPackages;
+    }
+
+    public void setFlattenPackages(final boolean flattenPackages) {
+        this.flattenPackages = flattenPackages;
+        if (currentResults != null) {
+            updateTree();
+        }
+    }
+
+    public boolean isDisplayingErrors() {
+        return displayingErrors;
+    }
+
+    public void setDisplayingErrors(final boolean displayingErrors) {
+        this.displayingErrors = displayingErrors;
+    }
+
+    public boolean isDisplayingWarnings() {
+        return displayingWarnings;
+    }
+
+    public void setDisplayingWarnings(final boolean displayingWarnings) {
+        this.displayingWarnings = displayingWarnings;
+    }
+
+    public boolean isDisplayingInfo() {
+        return displayingInfo;
+    }
+
+    public void setDisplayingInfo(final boolean displayingInfo) {
+        this.displayingInfo = displayingInfo;
+    }
+
+    private PluginConfigurationManager configurationManager() {
+        return project.getService(PluginConfigurationManager.class);
+    }
+
+    /**
+     * Listen for clicks and scroll to the error's source as necessary or show a context menu.
      */
     protected class ToolWindowMouseListener extends MouseAdapter {
 
         @Override
         public void mouseClicked(final MouseEvent e) {
-            if (!scrollToSource && e.getClickCount() < 2) {
-                return;
-            }
+            if (e.getButton() == MouseEvent.BUTTON1) {
+                if (!scrollToSource && e.getClickCount() < 2) {
+                    return;
+                }
 
-            final TreePath treePath = resultsTree.getPathForLocation(
-                    e.getX(), e.getY());
+                // When clicking a collapsed file node with a lot of problem nodes under it,
+                // the tree will scroll after expanding the file node.
+                // The x/y coordinates will in fact be where the mouse *is* and, due to the scroll,
+                // point to another node.
+                final TreePath treePath = resultsTree.getPathForLocation(
+                        e.getX(), e.getY());
 
-            if (treePath != null) {
-                scrollToError(treePath);
+                if (treePath != null) {
+                    scrollToError(treePath);
+                }
+
+            } else if (e.getButton() == MouseEvent.BUTTON3) {
+                final TreePath treePath = resultsTree.getPathForLocation(
+                        e.getX(), e.getY());
+
+                if (treePath != null) {
+                    final DefaultMutableTreeNode treeNode = (DefaultMutableTreeNode)
+                            treePath.getLastPathComponent();
+                    if (treeNode != null) {
+                        if (treeNode.getUserObject() instanceof ResultTreeBranchNode) {
+                            JBPopupFactory.getInstance()
+                                    .createListPopup(new BranchNodeContextMenu(treePath, treeNode))
+                                    .show(new RelativePoint(e));
+                        }
+                    }
+                }
             }
         }
+    }
 
+    /**
+     * A context (popup) menu for branch nodes.
+     * <p>
+     * Currently only shows "Expand this node" option.
+     */
+    private class BranchNodeContextMenu extends BaseListPopupStep<Integer> {
+        private final TreePath treePath;
+        private final TreeNode treeNode;
+
+        public BranchNodeContextMenu(@NotNull final TreePath treePath, @NotNull final TreeNode treeNode) {
+            super(null, 0);
+            this.treePath = treePath;
+            this.treeNode = treeNode;
+        }
+
+        @Override
+        @NotNull
+        public String getTextFor(@NotNull final Integer value) {
+            return CheckStyleBundle.message("action.tree-node.expand.text");
+        }
+
+        @Override
+        @Nullable
+        public PopupStep<?> onChosen(@NotNull final Integer selectedValue, final boolean finalChoice) {
+            expandNode(resultsTree, treeNode, treePath, treeModel.getMaxNodeDepth());
+            return PopupStep.FINAL_CHOICE;
+        }
     }
 
     /**
@@ -410,185 +689,5 @@ public class CheckStyleToolWindowPanel extends JPanel implements ConfigurationLi
             }
         }
 
-    }
-
-    /**
-     * Collapse the tree so that only the root node is visible.
-     */
-    public void collapseTree() {
-        for (int i = 1; i < resultsTree.getRowCount(); ++i) {
-            resultsTree.collapseRow(i);
-        }
-    }
-
-    /**
-     * Expand the error tree to the fullest.
-     */
-    public void expandTree() {
-        expandTree(3);
-    }
-
-    /**
-     * Expand the given tree to the given level, starting from the given node
-     * and path.
-     *
-     * @param tree  The tree to be expanded
-     * @param node  The node to start from
-     * @param path  The path to start from
-     * @param level The number of levels to expand to
-     */
-    private static void expandNode(final JTree tree,
-                                   final TreeNode node,
-                                   final TreePath path,
-                                   final int level) {
-        if (level <= 0) {
-            return;
-        }
-
-        tree.expandPath(path);
-
-        for (int i = 0; i < node.getChildCount(); ++i) {
-            final TreeNode childNode = node.getChildAt(i);
-            expandNode(tree, childNode, path.pathByAddingChild(childNode), level - 1);
-        }
-    }
-
-    /**
-     * Expand the error tree to the given level.
-     *
-     * @param level The level to expand to
-     */
-    private void expandTree(final int level) {
-        expandNode(resultsTree, treeModel.getVisibleRoot(),
-                new TreePath(treeModel.getPathToRoot(treeModel.getVisibleRoot())), level);
-    }
-
-    /**
-     * Clear the results and display a 'scan in progress' notice.
-     *
-     * @param size the number of files being scanned.
-     */
-    public void displayInProgress(final int size) {
-        setProgressBarMax(size);
-
-        treeModel.clear();
-        treeModel.setRootMessage("plugin.results.in-progress");
-    }
-
-    public void displayWarningResult(final String messageKey,
-                                     final Object... messageArgs) {
-        clearProgress();
-
-        treeModel.clear();
-        treeModel.setRootMessage(messageKey, messageArgs);
-    }
-
-    /**
-     * Clear the results and display notice to say an error occurred.
-     *
-     * @param error the error that occurred.
-     */
-    public void displayErrorResult(final Throwable error) {
-        // match some friendly error messages.
-        String errorText = null;
-        if (error instanceof CheckstyleToolException && error.getCause() != null) {
-            for (final Map.Entry<Pattern, String> errorPatternEntry
-                    : CHECKSTYLE_ERROR_PATTERNS.entrySet()) {
-                final Matcher errorMatcher
-                        = errorPatternEntry.getKey().matcher(error.getCause().getMessage());
-                if (errorMatcher.find()) {
-                    final Object[] args = new Object[errorMatcher.groupCount()];
-
-                    for (int i = 0; i < errorMatcher.groupCount(); ++i) {
-                        args[i] = errorMatcher.group(i + 1);
-                    }
-
-                    errorText = message(errorPatternEntry.getValue(), args);
-                }
-            }
-        }
-
-        if (errorText == null) {
-            if (error instanceof CheckStylePluginParseException) {
-                errorText = message("plugin.results.unparseable");
-            } else {
-                errorText = message("plugin.results.error");
-            }
-        }
-
-        treeModel.clear();
-        treeModel.setRootText(errorText);
-
-        clearProgress();
-    }
-
-    private SeverityLevel[] getDisplayedSeverities() {
-        final List<SeverityLevel> severityLevels = new ArrayList<>();
-
-        if (displayingErrors) {
-            severityLevels.add(SeverityLevel.Error);
-        }
-
-        if (displayingWarnings) {
-            severityLevels.add(SeverityLevel.Warning);
-        }
-
-        if (displayingInfo) {
-            severityLevels.add(SeverityLevel.Info);
-        }
-
-        return severityLevels.toArray(new SeverityLevel[0]);
-    }
-
-    /**
-     * Refresh the displayed results based on the current filter settings.
-     */
-    public void filterDisplayedResults() {
-        // TODO be a little nicer here, maintain display state
-
-        treeModel.filter(getDisplayedSeverities());
-    }
-
-    /**
-     * Display the passed results.
-     *
-     * @param results the map of checked files to problem descriptors.
-     */
-    public void displayResults(final Map<PsiFile, List<Problem>> results) {
-        treeModel.setModel(results, getDisplayedSeverities());
-
-        invalidate();
-        repaint();
-
-        expandTree();
-        clearProgress();
-    }
-
-    public boolean isDisplayingErrors() {
-        return displayingErrors;
-    }
-
-    public void setDisplayingErrors(final boolean displayingErrors) {
-        this.displayingErrors = displayingErrors;
-    }
-
-    public boolean isDisplayingWarnings() {
-        return displayingWarnings;
-    }
-
-    public void setDisplayingWarnings(final boolean displayingWarnings) {
-        this.displayingWarnings = displayingWarnings;
-    }
-
-    public boolean isDisplayingInfo() {
-        return displayingInfo;
-    }
-
-    public void setDisplayingInfo(final boolean displayingInfo) {
-        this.displayingInfo = displayingInfo;
-    }
-
-    private PluginConfigurationManager configurationManager() {
-        return project.getService(PluginConfigurationManager.class);
     }
 }

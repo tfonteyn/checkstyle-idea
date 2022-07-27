@@ -1,10 +1,10 @@
 package org.infernus.idea.checkstyle;
 
-import com.intellij.AbstractBundle;
+import com.intellij.DynamicBundle;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.PropertyKey;
 
-public final class CheckStyleBundle extends AbstractBundle {
+public final class CheckStyleBundle extends DynamicBundle {
 
     @NonNls
     private static final String BUNDLE = "org.infernus.idea.checkstyle.CheckStyleBundle";

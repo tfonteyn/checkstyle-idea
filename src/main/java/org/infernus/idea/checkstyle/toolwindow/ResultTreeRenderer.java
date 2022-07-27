@@ -1,5 +1,7 @@
 package org.infernus.idea.checkstyle.toolwindow;
 
+import org.infernus.idea.checkstyle.toolwindow.nodes.ResultTreeNode;
+
 import com.intellij.ui.JBColor;
 
 import javax.swing.*;
@@ -12,6 +14,8 @@ import java.awt.*;
  */
 public class ResultTreeRenderer extends JLabel
         implements TreeCellRenderer {
+
+    private static final long serialVersionUID = 7023191163906466099L;
 
     private boolean selected;
 
@@ -65,7 +69,8 @@ public class ResultTreeRenderer extends JLabel
                     setIcon(treeNode.getCollapsedIcon());
                 }
 
-                setText(treeNode.toString());
+                setToolTipText(treeNode.getTooltip());
+                setText(treeNode.getDescription());
                 validate();
 
             } else {

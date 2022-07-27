@@ -1,22 +1,24 @@
 package org.infernus.idea.checkstyle.toolwindow;
 
+import org.infernus.idea.checkstyle.toolwindow.nodes.ResultTreeNode;
+import org.jetbrains.annotations.NotNull;
+
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Tree node with togglable visibility.
+ * Tree node with toggleable visibility.
  */
 public class TogglableTreeNode extends DefaultMutableTreeNode {
     private static final long serialVersionUID = -4490734768175672868L;
 
     private boolean visible = true;
 
-    public TogglableTreeNode() {
-    }
-
-    public TogglableTreeNode(final Object userObject) {
+    public TogglableTreeNode(@NotNull final ResultTreeNode userObject) {
         super(userObject);
     }
 
@@ -28,10 +30,21 @@ public class TogglableTreeNode extends DefaultMutableTreeNode {
         this.visible = visible;
     }
 
+    @Override
+    @NotNull
+    public ResultTreeNode getUserObject() {
+        return (ResultTreeNode) Objects.requireNonNull(super.getUserObject());
+    }
+
+    @NotNull
     List<TogglableTreeNode> getAllChildren() {
-        return children.stream()
-                .map(child -> (TogglableTreeNode) child)
-                .collect(Collectors.toList());
+        if (children != null) {
+            return children.stream()
+                    .map(child -> (TogglableTreeNode) child)
+                    .collect(Collectors.toList());
+        } else {
+            return Collections.emptyList();
+        }
     }
 
     @Override
@@ -39,9 +52,8 @@ public class TogglableTreeNode extends DefaultMutableTreeNode {
         int realIndex = -1;
         int visibleIndex = -1;
 
-        for (final Object child : children) {
-            final TogglableTreeNode node = (TogglableTreeNode) child;
-            if (node.isVisible()) {
+        for (final TogglableTreeNode child : getAllChildren()) {
+            if (child.isVisible()) {
                 ++visibleIndex;
             }
             ++realIndex;
@@ -58,15 +70,8 @@ public class TogglableTreeNode extends DefaultMutableTreeNode {
         if (children == null) {
             return 0;
         }
-
-        int count = 0;
-        for (final Object child : children) {
-            final TogglableTreeNode node = (TogglableTreeNode) child;
-            if (node.isVisible()) {
-                ++count;
-            }
-        }
-
-        return count;
+        return (int) getAllChildren().stream()
+                .filter(TogglableTreeNode::isVisible)
+                .count();
     }
 }

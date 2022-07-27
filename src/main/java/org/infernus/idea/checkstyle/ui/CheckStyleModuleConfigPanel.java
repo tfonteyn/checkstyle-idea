@@ -1,30 +1,19 @@
 package org.infernus.idea.checkstyle.ui;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.util.ui.JBUI;
 import org.infernus.idea.checkstyle.CheckStyleBundle;
 import org.infernus.idea.checkstyle.model.ConfigurationLocation;
-import org.infernus.idea.checkstyle.util.Icons;
 
-import javax.swing.Box;
-import javax.swing.ButtonGroup;
-import javax.swing.DefaultComboBoxModel;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JRadioButton;
-import javax.swing.SwingConstants;
-import java.awt.BorderLayout;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-
-import static com.intellij.util.ui.JBUI.emptyInsets;
 
 /**
  * Provides module level configuration UI.
@@ -60,7 +49,7 @@ public class CheckStyleModuleConfigPanel extends JPanel {
         final JPanel configPanel = new JPanel(new GridBagLayout());
 
         final JLabel informationLabel = new JLabel(CheckStyleBundle.message("config.module.information"),
-                Icons.icon("/general/information.png"), SwingConstants.LEFT);
+                                                   AllIcons.General.Information, SwingConstants.LEFT);
         configPanel.add(informationLabel, new GridBagConstraints(0, 0, 2, 1, 1.0, 0.0,
                 GridBagConstraints.NORTHWEST, GridBagConstraints.HORIZONTAL, JBUI.insets(16, 8), 0, 0));
 
@@ -99,7 +88,7 @@ public class CheckStyleModuleConfigPanel extends JPanel {
                 GridBagConstraints.NORTHWEST, GridBagConstraints.HORIZONTAL, ISOLATED_COMPONENT_INSETS, 0, 0));
 
         configPanel.add(Box.createGlue(), new GridBagConstraints(0, 5, 2, 1, 1.0, 1.0,
-                GridBagConstraints.NORTHWEST, GridBagConstraints.BOTH, emptyInsets(), 0, 0));
+                GridBagConstraints.NORTHWEST, GridBagConstraints.BOTH, JBUI.emptyInsets(), 0, 0));
 
         useProjectConfigurationRadio.setSelected(true);
         configurationFilesLabel.setEnabled(false);

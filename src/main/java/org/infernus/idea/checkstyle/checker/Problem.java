@@ -4,11 +4,15 @@ import com.intellij.codeInspection.InspectionManager;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleUtil;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import org.infernus.idea.checkstyle.CheckStyleBundle;
 import org.infernus.idea.checkstyle.csapi.SeverityLevel;
 import org.infernus.idea.checkstyle.util.Objects;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class Problem implements Comparable<Problem> {
     private final PsiElement target;
@@ -19,6 +23,7 @@ public class Problem implements Comparable<Problem> {
     private final String message;
     private final boolean afterEndOfLine;
     private final boolean suppressErrors;
+    private final PsiFile file;
 
     public Problem(@NotNull final PsiElement target,
                    @NotNull final String message,
@@ -36,21 +41,45 @@ public class Problem implements Comparable<Problem> {
         this.sourceName = sourceName;
         this.afterEndOfLine = afterEndOfLine;
         this.suppressErrors = suppressErrors;
+
+        // Calling this in the constructor *should* make certain that the file is never 'null'
+        // Tests have shown that "target.getContainingFile()" CAN return 'null' if used at a later time.
+        // We presume this was after the user made a change to their project and thus made the file unavailable.
+        // i.e. the meta-data was no longer valid, but still displayed in the ToolWindow.
+        file = this.target.getContainingFile();
     }
 
     @NotNull
     public ProblemDescriptor toProblemDescriptor(final InspectionManager inspectionManager,
                                                  final boolean onTheFly) {
         return inspectionManager.createProblemDescriptor(target,
-                CheckStyleBundle.message("inspection.message", message()),
-                quickFixes(), problemHighlightType(), onTheFly, afterEndOfLine);
+                                                         CheckStyleBundle.message("inspection.message", message()),
+                                                         quickFixes(), problemHighlightType(), onTheFly, afterEndOfLine);
     }
 
+    @Nullable
     private LocalQuickFix[] quickFixes() {
         if (sourceName != null) {
             return new LocalQuickFix[]{new SuppressForCheckstyleFix(shortenClassName(sourceName))};
         }
         return null;
+    }
+
+    @Nullable
+    public Module getContainingModule() {
+        return ModuleUtil.findModuleForFile(file);
+    }
+
+    /**
+     * Get the containing file for this problem.
+     * <p>
+     * This <strong>can</strong> return {@code null}. See this class constructor notes for details.
+     *
+     * @return the file
+     */
+    @Nullable
+    public PsiFile getContainingFile() {
+        return file;
     }
 
     @NotNull
@@ -66,7 +95,8 @@ public class Problem implements Comparable<Problem> {
         return CheckStyleBundle.message("plugin.results.unknown-source");
     }
 
-    private String shortenClassName(final String className) {
+    @NotNull
+    private String shortenClassName(@NotNull final String className) {
         final int lastPackageIndex = className.lastIndexOf(".");
         if (lastPackageIndex >= 0) {
             return className
@@ -89,6 +119,7 @@ public class Problem implements Comparable<Problem> {
         return column;
     }
 
+    @NotNull
     private ProblemHighlightType problemHighlightType() {
         if (!suppressErrors) {
             switch (severityLevel()) {
@@ -157,13 +188,7 @@ public class Problem implements Comparable<Problem> {
 
     @Override
     public int hashCode() {
-        int result = target.hashCode();
-        result = 31 * result + severityLevel.hashCode();
-        result = 31 * result + line;
-        result = 31 * result + column;
-        result = 31 * result + message.hashCode();
-        result = 31 * result + (afterEndOfLine ? 1 : 0);
-        result = 31 * result + (suppressErrors ? 1 : 0);
-        return result;
+        return java.util.Objects.hash(target, severityLevel, line, column,
+                                      sourceName, message, afterEndOfLine, suppressErrors);
     }
 }

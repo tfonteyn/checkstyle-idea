@@ -1,20 +1,14 @@
 package org.infernus.idea.checkstyle.util;
 
+import com.intellij.openapi.util.IconLoader;
+
 import javax.swing.*;
-import java.net.URL;
 
 public final class Icons {
 
+    private static final String BASE = "/org/infernus/idea/checkstyle/images/";
+    public static final Icon CS = IconLoader.getIcon(BASE + "cs_16.svg", Icons.class);
+
     private Icons() {
     }
-
-    public static ImageIcon icon(final String iconPath) {
-        final URL url = Icons.class.getResource(iconPath);
-        if (url != null) {
-            return new ImageIcon(url);
-        }
-
-        return null;
-    }
-
 }
