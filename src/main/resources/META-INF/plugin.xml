@@ -7,7 +7,7 @@
         <![CDATA[
 <p>
     This plugin provides both real-time and on-demand scanning
-    of Java files with CheckStyle from within IDEA.
+    of Java files with Checkstyle from within IDEA.
 </p>
 <p>
     Please note this is not an official part of Checkstyle - they neither endorse
@@ -15,7 +15,7 @@
 </p>
         ]]>
     </description>
-    <version>5.80.1</version>
+    <version>5.81.0</version>
     <idea-version since-build="221.6008.13"/>
     <vendor url="https://infernus.org/" email="jamie@infernus.org">Jamie Shiell</vendor>
 
@@ -24,6 +24,7 @@
     <change-notes>
         <![CDATA[
 <ul>
+    <li>5.81.0: New: Added Checkstyle 10.12.1.</li>
     <li>5.80.1: Fixed: Skip changelist & module checks to ensure update action is fast enough on toolbar actions (#612, #615).</li>
     <li>5.80.0: New: Added Checkstyle 10.12.0.</li>
     <li>5.79.0: New: Added Checkstyle 10.10.0.</li>
